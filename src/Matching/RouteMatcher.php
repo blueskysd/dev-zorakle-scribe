@@ -6,12 +6,23 @@ use Dingo\Api\Routing\RouteCollection;
 use Illuminate\Routing\Route;
 use Illuminate\Support\Facades\Route as RouteFacade;
 use Illuminate\Support\Str;
+use Knuckles\Scribe\Extracting\RouteDocBlocker;
+use Knuckles\Scribe\Tools\ConsoleOutputUtils as c;
+
 
 class RouteMatcher implements RouteMatcherInterface
 {
     public function getRoutes(array $routeRules = [], string $router = 'laravel'): array
     {
         $usingDingoRouter = strtolower($router) == 'dingo';
+
+        c::info ('Rules: '.print_r($routeRules[0]['match']['public'], true));
+        $onlyPublic = $routeRules[0]['match']['public'] ?? false;
+        c::info('Only public: '.$onlyPublic);
+        if($onlyPublic) {
+            c::info('Using public route matcher');
+            return $this->getPublicRoutes($routeRules, $usingDingoRouter);
+        }
 
         return $this->getRoutesToBeDocumented($routeRules, $usingDingoRouter);
     }
@@ -93,4 +104,35 @@ class RouteMatcher implements RouteMatcherInterface
         return Str::is($excludes, $route->getName())
             || Str::is($excludes, $route->uri());
     }
+
+    protected    function getPublicRoutes(array $routeRules, bool $usingDingoRouter = false): array
+    {
+        $allRoutes = $this->getRoutesToBeDocumented($routeRules, $usingDingoRouter);
+        $publicRoutes = [];
+        foreach ($allRoutes as $route) {
+            if($this->isPublicRoute($route->getRoute())) {
+                $publicRoutes[] = $route;
+                c::info('matched: '.$route->getRoute()->uri());
+            }
+        }
+        return $publicRoutes;
+    }
+
+private function isPublicRoute(Route $route)
+{
+    try{
+        $methodDocBlock = RouteDocBlocker::getDocBlocksFromRoute($route)['method'];
+    } catch (\Exception $e) {
+        c::info('Skipping: '.$e->getMessage());
+        return false;
+    }
+    $methodDocBlock = RouteDocBlocker::getDocBlocksFromRoute($route)['method'];
+    $tags = $methodDocBlock->getTagsByName('routePublic');
+    if (!empty($tags)) {
+        return true;
+    }
+    return false;
+}
+
+
 }
